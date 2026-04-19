@@ -1,5 +1,4 @@
-/**
- * main.js
+ /* main.js
  * JavaScript principal de Vestigia CheckIn
  * Maneja: sidebar, reloj, tabs, modales, toasts, chips de filtro
  */
