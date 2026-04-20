@@ -29,20 +29,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  
         // ── Crear proyecto ────────────────────────────────────────────────────
         if ($accion === 'crear') {
-            $nombre   = trim($_POST['nombre'] ?? '');
-            $deptoId  = (int)($_POST['departamento_id'] ?? 0) ?: null;
-            $fechaIni = $_POST['fecha_inicio'] ?? date('Y-m-d');
-            $fechaFin = !empty($_POST['fecha_fin']) ? $_POST['fecha_fin'] : null;
-            $uids     = $_POST['usuarios'] ?? [];
+            $nombre      = trim($_POST['nombre'] ?? '');
+            $descripcion = trim($_POST['descripcion'] ?? '') ?: null;
+            $deptoId     = (int)($_POST['departamento_id'] ?? 0) ?: null;
+            $fechaIni    = $_POST['fecha_inicio'] ?? date('Y-m-d');
+            $fechaFin    = !empty($_POST['fecha_fin']) ? $_POST['fecha_fin'] : null;
+            $uids        = $_POST['usuarios'] ?? [];
  
             if (!$nombre) {
                 $error = 'El nombre del proyecto es obligatorio.';
             } else {
                 $stmt = $pdo->prepare(
-                    "INSERT INTO proyectos (nombre, departamento_id, activo, fecha_inicio, fecha_fin)
-                     VALUES (?, ?, 1, ?, ?)"
+                    "INSERT INTO proyectos (nombre, descripcion, departamento_id, activo, fecha_inicio, fecha_fin)
+                     VALUES (?, ?, ?, 1, ?, ?)"
                 );
-                $stmt->execute([$nombre, $deptoId, $fechaIni, $fechaFin]);
+                $stmt->execute([$nombre, $descripcion, $deptoId, $fechaIni, $fechaFin]);
                 $proyId = $pdo->lastInsertId();
  
                 foreach ($uids as $uid) {
@@ -55,19 +56,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
  
         // ── Editar proyecto ───────────────────────────────────────────────────
         if ($accion === 'editar') {
-            $id       = (int)($_POST['proyecto_id'] ?? 0);
-            $nombre   = trim($_POST['nombre'] ?? '');
-            $deptoId  = (int)($_POST['departamento_id'] ?? 0) ?: null;
-            $fechaIni = $_POST['fecha_inicio'] ?? date('Y-m-d');
-            $fechaFin = !empty($_POST['fecha_fin']) ? $_POST['fecha_fin'] : null;
-            $uids     = $_POST['usuarios'] ?? [];
+            $id          = (int)($_POST['proyecto_id'] ?? 0);
+            $nombre      = trim($_POST['nombre'] ?? '');
+            $descripcion = trim($_POST['descripcion'] ?? '') ?: null;
+            $deptoId     = (int)($_POST['departamento_id'] ?? 0) ?: null;
+            $fechaIni    = $_POST['fecha_inicio'] ?? date('Y-m-d');
+            $fechaFin    = !empty($_POST['fecha_fin']) ? $_POST['fecha_fin'] : null;
+            $uids        = $_POST['usuarios'] ?? [];
  
             if (!$nombre) {
                 $error = 'El nombre del proyecto es obligatorio.';
             } else {
                 $pdo->prepare(
-                    "UPDATE proyectos SET nombre=?, departamento_id=?, fecha_inicio=?, fecha_fin=? WHERE id=?"
-                )->execute([$nombre, $deptoId, $fechaIni, $fechaFin, $id]);
+                    "UPDATE proyectos SET nombre=?, descripcion=?, departamento_id=?, fecha_inicio=?, fecha_fin=? WHERE id=?"
+                )->execute([$nombre, $descripcion, $deptoId, $fechaIni, $fechaFin, $id]);
  
                 $pdo->prepare("DELETE FROM proyecto_usuario WHERE proyecto_id = ?")->execute([$id]);
                 foreach ($uids as $uid) {
@@ -198,7 +200,12 @@ if (tieneRol([ROL_SUPERADMIN])) {
                                 <?php foreach ($activos as $p): ?>
                                 <?php $uidsProyecto = $asignaciones[$p['id']] ?? []; ?>
                                 <tr>
-                                    <td><strong><?= e($p['nombre']) ?></strong></td>
+                                    <td>
+                                        <strong><?= e($p['nombre']) ?></strong>
+                                        <?php if (!empty($p['descripcion'])): ?>
+                                            <div style="color:var(--texto-suave);font-size:0.8rem;margin-top:0.2rem;"><?= e($p['descripcion']) ?></div>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?= e($p['departamento_nombre'] ?? 'Interdepartamental') ?></td>
                                     <td><?= $p['fecha_inicio'] ? date('d/m/Y', strtotime($p['fecha_inicio'])) : '—' ?></td>
                                     <td><?= $p['fecha_fin'] ? date('d/m/Y', strtotime($p['fecha_fin'])) : '—' ?></td>
@@ -210,6 +217,7 @@ if (tieneRol([ROL_SUPERADMIN])) {
                                             onclick="abrirEditar(<?= htmlspecialchars(json_encode([
                                                 'id'               => $p['id'],
                                                 'nombre'           => $p['nombre'],
+                                                'descripcion'      => $p['descripcion'] ?? '',
                                                 'departamento_id'  => $p['departamento_id'],
                                                 'fecha_inicio'     => $p['fecha_inicio'],
                                                 'fecha_fin'        => $p['fecha_fin'],
@@ -310,6 +318,13 @@ if (tieneRol([ROL_SUPERADMIN])) {
                     <input type="text" name="nombre" class="form-control" placeholder="Ej: Edición Especial Roma" required>
                 </div>
  
+                <div class="form-grupo">
+                    <label>Descripción <span style="color:var(--texto-suave);font-size:0.8rem;">(opcional)</span></label>
+                    <textarea name="descripcion" class="form-control" rows="2"
+                              placeholder="Breve descripción del proyecto..."
+                              style="resize:vertical;"></textarea>
+                </div>
+ 
                 <div class="form-row">
                     <div class="form-grupo">
                         <label>Fecha de inicio</label>
@@ -377,6 +392,13 @@ if (tieneRol([ROL_SUPERADMIN])) {
                     <input type="text" name="nombre" id="edit-nombre" class="form-control" required>
                 </div>
  
+                <div class="form-grupo">
+                    <label>Descripción <span style="color:var(--texto-suave);font-size:0.8rem;">(opcional)</span></label>
+                    <textarea name="descripcion" id="edit-descripcion" class="form-control" rows="2"
+                              placeholder="Breve descripción del proyecto..."
+                              style="resize:vertical;"></textarea>
+                </div>
+ 
                 <div class="form-row">
                     <div class="form-grupo">
                         <label>Fecha de inicio</label>
@@ -427,6 +449,7 @@ if (tieneRol([ROL_SUPERADMIN])) {
 function abrirEditar(datos) {
     document.getElementById('edit-proyecto-id').value    = datos.id;
     document.getElementById('edit-nombre').value         = datos.nombre;
+    document.getElementById('edit-descripcion').value    = datos.descripcion || '';
     document.getElementById('edit-fecha-inicio').value   = datos.fecha_inicio || '';
     document.getElementById('edit-fecha-fin').value      = datos.fecha_fin || '';
     document.getElementById('edit-departamento').value   = datos.departamento_id || '';
@@ -450,7 +473,7 @@ function abrirEditar(datos) {
     color: var(--texto-suave);
 }
  
-/* Modal con más respiración para que no parezca tan apretado */
+/* Modal con más respiración */
 #modal-nuevo .modal,
 #modal-editar .modal {
     padding: 0;
