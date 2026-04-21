@@ -86,13 +86,13 @@ async function registrarEntrada() {
     actualizarEstadoVisual(true, respuesta.hora_entrada, respuesta.tarde, respuesta.minutos_retraso);
     iniciarContador(respuesta.hora_entrada);
     Vestigia.toast('Entrada registrada correctamente.', 'exito');
-    
+
     // Añadir al historial de hoy
     agregarEntradaHistorial(respuesta);
+
+    // Recargar para activar botón salida
+    setTimeout(() => location.reload(), 1500);
 }
-    //Recarga la pagina para poder ver estado, registro del fichaje y que se pueda registrar la salida sin tener 
-    //que actualizar manualmente el estado del fichaje
-    setTimeout(() => location.reload(), 1000);
 
 // ── Registrar salida ──────────────────────────────────────────────────────────
 async function registrarSalida() {
@@ -175,7 +175,6 @@ function iniciarContador(horaEntStr) {
     const contadorEl = document.getElementById('contador-tiempo');
     if (!contadorEl) return;
 
-    // Calcular timestamp de entrada (hoy + hora)
     const hoy      = new Date();
     const [h, m, s] = horaEntStr.split(':').map(Number);
     const entrada  = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), h, m, s || 0);
@@ -215,7 +214,6 @@ function agregarEntradaHistorial(datos) {
         </div>
     `;
 
-    // Insertar al principio
     if (lista.firstChild) {
         lista.insertBefore(item, lista.firstChild);
     } else {
