@@ -11,20 +11,21 @@ require_once dirname(__DIR__) . '/includes/funciones.php';
 
 requireLogin();
 
-$userId  = userId();
-$pdo     = getDB();
-$vista   = $_GET['vista'] ?? 'mias';
+$userId     = userId();
+$pdo        = getDB();
+$vista      = $_GET['vista'] ?? 'mias';
 $tipoFiltro = $_GET['tipo'] ?? '';
-$mensaje = '';
-$error   = '';
+$mensaje    = '';
+$error      = '';
 
-// ── Procesar nueva solicitud ──────────────────────────────────────────────────
+// ── Procesar acciones POST ────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
     if (!validarCsrf($_POST['csrf_token'] ?? '')) {
         $error = 'Token de seguridad inválido.';
     } else {
         $accion = $_POST['accion'];
 
+        // ── Nueva solicitud (empleado → responsable) ──────────────────────────
         if ($accion === 'nueva_solicitud') {
             $tipo        = $_POST['tipo'] ?? '';
             $descripcion = trim($_POST['descripcion'] ?? '');
@@ -45,13 +46,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
             }
         }
 
-        // Aprobar/rechazar solicitud (solo admins)
+        // ── Nueva propuesta (responsable → empleado) ──────────────────────────
+        elseif ($accion === 'nueva_propuesta' && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
+            $destinatarioId = (int)($_POST['destinatario_id'] ?? 0);
+            $tipo           = $_POST['tipo'] ?? '';
+            $descripcion    = trim($_POST['descripcion_propuesta'] ?? '');
+            $fechaInicio    = $_POST['fecha_inicio_propuesta'] ?? '';
+            $fechaFin       = $_POST['fecha_fin_propuesta'] ?? '';
+
+            $tiposValidos = ['vacaciones','baja','cambio_horario','teletrabajo'];
+            if (!$destinatarioId) {
+                $error = 'Debes seleccionar un empleado destinatario.';
+            } elseif (!in_array($tipo, $tiposValidos)) {
+                $error = 'Tipo de propuesta inválido.';
+            } elseif (!$descripcion) {
+                $error = 'La descripción es obligatoria.';
+            } else {
+                if (crearPropuesta($userId, $destinatarioId, $tipo, $descripcion, $fechaInicio, $fechaFin)) {
+                    $mensaje = 'Propuesta enviada correctamente al empleado.';
+                } else {
+                    $error = 'Error al enviar la propuesta. Inténtalo de nuevo.';
+                }
+            }
+        }
+
+        // ── Responder propuesta recibida (empleado acepta/rechaza) ────────────
+        elseif ($accion === 'responder_propuesta') {
+            $solicitudId = (int)($_POST['solicitud_id'] ?? 0);
+            $respuesta   = $_POST['respuesta'] ?? '';
+            $estado      = $respuesta === 'aceptar' ? 'aprobado' : 'rechazado';
+
+            // Verificar que la propuesta va dirigida a este usuario
+            $stmtV = $pdo->prepare("SELECT id FROM solicitudes WHERE id = ? AND destinatario_id = ? AND estado = 'pendiente'");
+            $stmtV->execute([$solicitudId, $userId]);
+            if ($stmtV->fetch()) {
+                $pdo->prepare(
+                    "UPDATE solicitudes SET estado = ?, aprobado_por = ?, fecha_resolucion = NOW() WHERE id = ?"
+                )->execute([$estado, $userId, $solicitudId]);
+                $mensaje = $estado === 'aprobado' ? 'Has aceptado la propuesta.' : 'Has rechazado la propuesta.';
+            } else {
+                $error = 'Propuesta no válida o ya respondida.';
+            }
+        }
+
+        // ── Aprobar/rechazar solicitud normal (solo admins) ───────────────────
         elseif (in_array($accion, ['aprobar', 'rechazar']) && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
             $solicitudId = (int)($_POST['solicitud_id'] ?? 0);
             $estado      = $accion === 'aprobar' ? 'aprobado' : 'rechazado';
             $stmt = $pdo->prepare(
                 "UPDATE solicitudes SET estado = ?, aprobado_por = ?, fecha_resolucion = NOW()
-                 WHERE id = ?"
+                 WHERE id = ? AND destinatario_id IS NULL"
             );
             if ($stmt->execute([$estado, $userId, $solicitudId])) {
                 $mensaje = 'Solicitud ' . ($estado === 'aprobado' ? 'aprobada' : 'rechazada') . ' correctamente.';
@@ -75,39 +119,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
     }
 }
 
-// ── Obtener solicitudes ───────────────────────────────────────────────────────
-if ($vista === 'admin' && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
-    // Vista admin: todas las solicitudes (filtradas por depto si subadmin)
+// ── Obtener datos para cada tab ───────────────────────────────────────────────
+
+// Solicitudes normales propias (empleado → responsable, sin destinatario)
+$sql = "SELECT s.* FROM solicitudes s WHERE s.user_id = ? AND s.destinatario_id IS NULL";
+$params = [$userId];
+if ($tipoFiltro) {
+    $sql .= " AND s.tipo = ?";
+    $params[] = $tipoFiltro;
+}
+$sql .= " ORDER BY s.fecha DESC";
+$stmtMias = $pdo->prepare($sql);
+$stmtMias->execute($params);
+$solicitudes = $stmtMias->fetchAll();
+
+// Solicitudes pendientes de aprobación (vista admin, solo las normales sin destinatario)
+$solicitudesPendientes = [];
+if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
     if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH])) {
-        $stmt = $pdo->query(
+        $stmtA = $pdo->query(
             "SELECT s.*, u.nombre AS usuario_nombre, u.email AS usuario_email
              FROM solicitudes s INNER JOIN users u ON u.id = s.user_id
-             WHERE s.estado = 'pendiente'
+             WHERE s.estado = 'pendiente' AND s.destinatario_id IS NULL
              ORDER BY s.fecha DESC"
         );
     } else {
-        $stmt = $pdo->prepare(
+        $stmtA = $pdo->prepare(
             "SELECT s.*, u.nombre AS usuario_nombre, u.email AS usuario_email
              FROM solicitudes s INNER JOIN users u ON u.id = s.user_id
-             WHERE s.estado = 'pendiente' AND u.departamento_id = ?
+             WHERE s.estado = 'pendiente' AND s.destinatario_id IS NULL AND u.departamento_id = ?
              ORDER BY s.fecha DESC"
         );
-        $stmt->execute([userDepto()]);
+        $stmtA->execute([userDepto()]);
     }
-    $solicitudes = $stmt->fetchAll();
-} else {
-    // Vista usuario: solo las propias
-    $sql = "SELECT s.* FROM solicitudes s WHERE s.user_id = ?";
-    $params = [$userId];
-    if ($tipoFiltro) {
-        $sql .= " AND s.tipo = ?";
-        $params[] = $tipoFiltro;
-    }
-    $sql .= " ORDER BY s.fecha DESC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $solicitudes = $stmt->fetchAll();
+    $solicitudesPendientes = $stmtA->fetchAll();
 }
+
+// Propuestas recibidas por el usuario actual
+$propuestasRecibidas = getPropuestasRecibidas($userId);
+
+// Propuestas enviadas por el usuario actual (solo responsables)
+$propuestasEnviadas = [];
+if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
+    $propuestasEnviadas = getPropuestasEnviadas($userId);
+}
+
+// Empleados disponibles para enviar propuestas (filtrado por depto si subadmin)
+$empleadosParaPropuesta = [];
+if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
+    $deptoFiltro = tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH]) ? 0 : userDepto();
+    $empleadosParaPropuesta = getUsuarios($deptoFiltro);
+    // Excluir al propio responsable
+    $empleadosParaPropuesta = array_filter($empleadosParaPropuesta, fn($u) => $u['id'] !== $userId);
+}
+
+// Determinar qué tab activar por defecto
+$tabActiva = $vista;
 
 $etiquetasTipo = [
     'vacaciones'     => '🌴 Vacaciones',
@@ -148,23 +215,41 @@ $etiquetasEstado = [
                 <div class="alerta alerta-error"><span>✕</span> <?= e($error) ?></div>
             <?php endif; ?>
 
-            <!-- Tabs: Mis solicitudes / Vista admin -->
+            <!-- Tabs -->
             <div class="tabs-wrapper">
                 <div class="tabs">
-                    <button class="tab-btn <?= $vista !== 'admin' ? 'activo' : '' ?>" data-tab="mias">Mis solicitudes</button>
-                    <?php if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])): ?>
-                    <button class="tab-btn <?= $vista === 'admin' ? 'activo' : '' ?>" data-tab="admin">
-                        Pendientes de aprobación
+                    <button class="tab-btn <?= !in_array($tabActiva, ['admin','recibidas','enviadas']) ? 'activo' : '' ?>" data-tab="mias">
+                        Mis solicitudes
                     </button>
+                    <?php if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])): ?>
+                    <button class="tab-btn <?= $tabActiva === 'admin' ? 'activo' : '' ?>" data-tab="admin">
+                        Pendientes de aprobación
+                        <?php if (count($solicitudesPendientes) > 0): ?>
+                            <span class="badge badge-acento" style="margin-left:0.4rem;"><?= count($solicitudesPendientes) ?></span>
+                        <?php endif; ?>
+                    </button>
+                    <?php endif; ?>
+                    <?php $numRecibidas = count(array_filter($propuestasRecibidas, fn($p) => $p['estado'] === 'pendiente')); ?>
+                    <button class="tab-btn <?= $tabActiva === 'recibidas' ? 'activo' : '' ?>" data-tab="recibidas">
+                        📬 Recibidas
+                        <?php if ($numRecibidas > 0): ?>
+                            <span class="badge badge-acento" style="margin-left:0.4rem;"><?= $numRecibidas ?></span>
+                        <?php endif; ?>
+                    </button>
+                    <?php if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])): ?>
+                    <button class="tab-btn <?= $tabActiva === 'enviadas' ? 'activo' : '' ?>" data-tab="enviadas">
+                        📤 Enviadas
+                    </button>
+                    <button class="tab-btn" data-tab="nueva-propuesta">+ Nueva propuesta</button>
                     <?php endif; ?>
                     <button class="tab-btn" data-tab="nueva">+ Nueva solicitud</button>
                 </div>
 
                 <!-- Tab: Mis solicitudes -->
-                <div id="tab-mias" class="tab-panel <?= $vista !== 'admin' ? 'activo' : '' ?>">
+                <div id="tab-mias" class="tab-panel <?= !in_array($tabActiva, ['admin','recibidas','enviadas']) ? 'activo' : '' ?>">
                     <div class="card">
                         <div class="card-titulo">📋 Mis solicitudes</div>
-                        <?php if ($solicitudes && $vista !== 'admin'): ?>
+                        <?php if ($solicitudes): ?>
                         <div class="tabla-contenedor">
                             <table class="tabla">
                                 <thead>
@@ -182,12 +267,10 @@ $etiquetasEstado = [
                                         <td><?= $etiquetasTipo[$s['tipo']] ?? e($s['tipo']) ?></td>
                                         <td style="max-width:280px;"><?= e($s['descripcion']) ?></td>
                                         <td>
-                                            <?php if ($s['fecha_inicio'] && $s['fecha_fin']): ?>
+                                            <?php if ($s['fecha_inicio']): ?>
                                                 <?= date('d/m/Y', strtotime($s['fecha_inicio'])) ?>
-                                                – <?= date('d/m/Y', strtotime($s['fecha_fin'])) ?>
-                                            <?php else: ?>
-                                                —
-                                            <?php endif; ?>
+                                                <?php if ($s['fecha_fin']): ?> – <?= date('d/m/Y', strtotime($s['fecha_fin'])) ?><?php endif; ?>
+                                            <?php else: ?>—<?php endif; ?>
                                         </td>
                                         <td><?= date('d/m/Y', strtotime($s['fecha'])) ?></td>
                                         <td>
@@ -199,18 +282,18 @@ $etiquetasEstado = [
                                 </tbody>
                             </table>
                         </div>
-                        <?php elseif ($vista !== 'admin'): ?>
+                        <?php else: ?>
                             <p style="color:var(--texto-suave);font-size:0.9rem;">No tienes solicitudes enviadas.</p>
                         <?php endif; ?>
                     </div>
                 </div>
 
-                <!-- Tab: Pendientes (admin) -->
+                <!-- Tab: Pendientes de aprobación (admin) -->
                 <?php if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])): ?>
-                <div id="tab-admin" class="tab-panel <?= $vista === 'admin' ? 'activo' : '' ?>">
+                <div id="tab-admin" class="tab-panel <?= $tabActiva === 'admin' ? 'activo' : '' ?>">
                     <div class="card">
                         <div class="card-titulo">✅ Solicitudes pendientes de aprobación</div>
-                        <?php if ($solicitudes && $vista === 'admin'): ?>
+                        <?php if ($solicitudesPendientes): ?>
                         <div class="tabla-contenedor">
                             <table class="tabla">
                                 <thead>
@@ -224,7 +307,7 @@ $etiquetasEstado = [
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($solicitudes as $s): ?>
+                                    <?php foreach ($solicitudesPendientes as $s): ?>
                                     <tr>
                                         <td>
                                             <strong><?= e($s['usuario_nombre']) ?></strong><br>
@@ -266,7 +349,176 @@ $etiquetasEstado = [
                 </div>
                 <?php endif; ?>
 
-                <!-- Tab: Nueva solicitud -->
+                <!-- Tab: Propuestas recibidas -->
+                <div id="tab-recibidas" class="tab-panel <?= $tabActiva === 'recibidas' ? 'activo' : '' ?>">
+                    <div class="card">
+                        <div class="card-titulo">📬 Propuestas recibidas</div>
+                        <?php if ($propuestasRecibidas): ?>
+                        <div class="tabla-contenedor">
+                            <table class="tabla">
+                                <thead>
+                                    <tr>
+                                        <th>De</th>
+                                        <th>Tipo</th>
+                                        <th>Descripción</th>
+                                        <th>Fechas</th>
+                                        <th>Recibida</th>
+                                        <th>Estado / Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($propuestasRecibidas as $p): ?>
+                                    <tr>
+                                        <td><strong><?= e($p['remitente_nombre']) ?></strong></td>
+                                        <td><?= $etiquetasTipo[$p['tipo']] ?? e($p['tipo']) ?></td>
+                                        <td style="max-width:240px;"><?= e($p['descripcion']) ?></td>
+                                        <td>
+                                            <?php if ($p['fecha_inicio']): ?>
+                                                <?= date('d/m/Y', strtotime($p['fecha_inicio'])) ?>
+                                                <?= $p['fecha_fin'] ? '– ' . date('d/m/Y', strtotime($p['fecha_fin'])) : '' ?>
+                                            <?php else: ?>—<?php endif; ?>
+                                        </td>
+                                        <td><?= date('d/m/Y H:i', strtotime($p['fecha'])) ?></td>
+                                        <td>
+                                            <?php if ($p['estado'] === 'pendiente'): ?>
+                                                <form method="POST" style="display:inline;">
+                                                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                                                    <input type="hidden" name="accion" value="responder_propuesta">
+                                                    <input type="hidden" name="solicitud_id" value="<?= $p['id'] ?>">
+                                                    <input type="hidden" name="respuesta" value="aceptar">
+                                                    <button type="submit" class="btn btn-exito btn-sm">✓ Aceptar</button>
+                                                </form>
+                                                <form method="POST" style="display:inline;margin-left:0.25rem;">
+                                                    <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                                                    <input type="hidden" name="accion" value="responder_propuesta">
+                                                    <input type="hidden" name="solicitud_id" value="<?= $p['id'] ?>">
+                                                    <input type="hidden" name="respuesta" value="rechazar">
+                                                    <button type="submit" class="btn btn-peligro btn-sm"
+                                                            data-confirmar="¿Rechazar esta propuesta?">✕ Rechazar</button>
+                                                </form>
+                                            <?php else: ?>
+                                                <?php $est = $etiquetasEstado[$p['estado']] ?? ['label'=>$p['estado'],'clase'=>'badge-gris']; ?>
+                                                <span class="badge <?= $est['clase'] ?>"><?= $est['label'] ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php else: ?>
+                            <p style="color:var(--texto-suave);font-size:0.9rem;">No tienes propuestas recibidas.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Tab: Propuestas enviadas (solo responsables) -->
+                <?php if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])): ?>
+                <div id="tab-enviadas" class="tab-panel <?= $tabActiva === 'enviadas' ? 'activo' : '' ?>">
+                    <div class="card">
+                        <div class="card-titulo">📤 Propuestas enviadas a empleados</div>
+                        <?php if ($propuestasEnviadas): ?>
+                        <div class="tabla-contenedor">
+                            <table class="tabla">
+                                <thead>
+                                    <tr>
+                                        <th>Empleado</th>
+                                        <th>Tipo</th>
+                                        <th>Descripción</th>
+                                        <th>Fechas</th>
+                                        <th>Enviada</th>
+                                        <th>Respuesta</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($propuestasEnviadas as $p): ?>
+                                    <tr>
+                                        <td>
+                                            <strong><?= e($p['destinatario_nombre']) ?></strong><br>
+                                            <span style="font-size:0.78rem;color:var(--texto-suave);"><?= e($p['destinatario_email']) ?></span>
+                                        </td>
+                                        <td><?= $etiquetasTipo[$p['tipo']] ?? e($p['tipo']) ?></td>
+                                        <td style="max-width:240px;"><?= e($p['descripcion']) ?></td>
+                                        <td>
+                                            <?php if ($p['fecha_inicio']): ?>
+                                                <?= date('d/m/Y', strtotime($p['fecha_inicio'])) ?>
+                                                <?= $p['fecha_fin'] ? '– ' . date('d/m/Y', strtotime($p['fecha_fin'])) : '' ?>
+                                            <?php else: ?>—<?php endif; ?>
+                                        </td>
+                                        <td><?= date('d/m/Y H:i', strtotime($p['fecha'])) ?></td>
+                                        <td>
+                                            <?php $est = $etiquetasEstado[$p['estado']] ?? ['label'=>$p['estado'],'clase'=>'badge-gris']; ?>
+                                            <span class="badge <?= $est['clase'] ?>"><?= $est['label'] ?></span>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php else: ?>
+                            <p style="color:var(--texto-suave);font-size:0.9rem;">No has enviado ninguna propuesta todavía.</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Tab: Nueva propuesta (responsable → empleado) -->
+                <div id="tab-nueva-propuesta" class="tab-panel">
+                    <div class="card" style="max-width:600px;">
+                        <div class="card-titulo">📝 Nueva propuesta a empleado</div>
+                        <form method="POST" action="">
+                            <input type="hidden" name="csrf_token" value="<?= csrfToken() ?>">
+                            <input type="hidden" name="accion" value="nueva_propuesta">
+
+                            <div class="form-grupo">
+                                <label for="destinatario_id">Empleado destinatario *</label>
+                                <select name="destinatario_id" id="destinatario_id" class="form-control" required>
+                                    <option value="">— Selecciona un empleado —</option>
+                                    <?php foreach ($empleadosParaPropuesta as $emp): ?>
+                                        <option value="<?= $emp['id'] ?>"><?= e($emp['nombre']) ?> — <?= e($emp['departamento_nombre'] ?? '—') ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="form-grupo">
+                                <label for="tipo_propuesta">Tipo de propuesta *</label>
+                                <select name="tipo" id="tipo_propuesta" class="form-control" required>
+                                    <option value="">— Selecciona —</option>
+                                    <?php foreach ($etiquetasTipo as $val => $etiq): ?>
+                                        <option value="<?= $val ?>"><?= $etiq ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="form-grupo">
+                                <label for="descripcion_propuesta">Descripción *</label>
+                                <textarea name="descripcion_propuesta" id="descripcion_propuesta" class="form-control"
+                                          rows="4" required
+                                          placeholder="Ej: Esta semana necesitamos que vengas en turno de tarde..."></textarea>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-grupo">
+                                    <label for="fecha_inicio_propuesta">Fecha inicio</label>
+                                    <input type="date" name="fecha_inicio_propuesta" id="fecha_inicio_propuesta" class="form-control">
+                                </div>
+                                <div class="form-grupo">
+                                    <label for="fecha_fin_propuesta">Fecha fin</label>
+                                    <input type="date" name="fecha_fin_propuesta" id="fecha_fin_propuesta" class="form-control">
+                                </div>
+                            </div>
+
+                            <div class="alerta alerta-info" style="margin-bottom:1rem;">
+                                <span>ℹ</span>
+                                <div>El empleado recibirá la propuesta en su pestaña <strong>Recibidas</strong> y podrá aceptarla o rechazarla.</div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primario">📨 Enviar propuesta</button>
+                        </form>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Tab: Nueva solicitud (empleado → responsable) -->
                 <div id="tab-nueva" class="tab-panel">
                     <div class="card" style="max-width:600px;">
                         <div class="card-titulo">📝 Nueva solicitud</div>
@@ -324,21 +576,18 @@ $etiquetasEstado = [
     </div>
 </div>
 <script src="<?= APP_URL ?>/assets/js/main.js"></script>
-<?php if ($vista === 'admin'): ?>
-<script>
-    // Activar tab admin si la URL lo indica
-    document.addEventListener('DOMContentLoaded', () => {
-        const tabAdmin = document.querySelector('[data-tab="admin"]');
-        if (tabAdmin) tabAdmin.click();
-    });
-</script>
-<?php elseif ($tipoFiltro): ?>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        const tabNueva = document.querySelector('[data-tab="nueva"]');
-        if (tabNueva) tabNueva.click();
+        <?php if ($tabActiva === 'admin'): ?>
+        document.querySelector('[data-tab="admin"]')?.click();
+        <?php elseif ($tabActiva === 'recibidas'): ?>
+        document.querySelector('[data-tab="recibidas"]')?.click();
+        <?php elseif ($tabActiva === 'enviadas'): ?>
+        document.querySelector('[data-tab="enviadas"]')?.click();
+        <?php elseif ($tipoFiltro): ?>
+        document.querySelector('[data-tab="nueva"]')?.click();
+        <?php endif; ?>
     });
 </script>
-<?php endif; ?>
 </body>
 </html>

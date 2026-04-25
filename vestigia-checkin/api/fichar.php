@@ -118,7 +118,7 @@ if ($metodo === 'POST') {
 
         $horaAhora = date('H:i:s');
         $horario   = obtenerHorario($usuario['tipo_jornada'] ?? 'completa');
-        $minExtra  = calcularHorasExtra($horaAhora, $horario['salida']);
+        $minExtra  = calcularHorasExtra($fichaje['hora_entrada'], $horaAhora, $horario['entrada'], $horario['salida']);
 
         $stmt = $pdo->prepare(
             "UPDATE fichajes SET hora_salida = ?, horas_extra = ? WHERE id = ?"

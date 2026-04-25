@@ -52,7 +52,7 @@ if ($accion === 'editar_fichaje') {
         $esTarde     = ($minRetraso > 0) ? 1 : 0;
 
         // Recalcular horas extra
-        $minExtra = $horaSalida ? calcularHorasExtra($horaSalida . ':00', $horario['salida']) : 0;
+        $minExtra = $horaSalida ? calcularHorasExtra($horaEntrada . ':00', $horaSalida . ':00', $horario['entrada'], $horario['salida']) : 0;
 
         $pdo->prepare(
             "UPDATE fichajes SET hora_entrada=?, hora_salida=?, proyecto_id=?, teletrabajo=?,

@@ -203,3 +203,18 @@ CREATE TABLE IF NOT EXISTS `eventos` (
 -- ============================================================================
 -- FIN DEL ESQUEMA
 -- ============================================================================
+
+-- ============================================================================
+-- MIGRACIÓN v1.1 — Propuestas de responsable a empleado
+-- Ejecutar sobre bases de datos existentes (instalaciones nuevas ya lo tienen)
+-- ============================================================================
+
+-- Añade destinatario_id a solicitudes.
+-- NULL  → flujo normal (empleado → responsable)
+-- valor → propuesta inversa (responsable → empleado concreto)
+ALTER TABLE `solicitudes`
+  ADD COLUMN IF NOT EXISTS `destinatario_id` INT(11) UNSIGNED DEFAULT NULL
+    COMMENT 'NULL=solicitud normal, valor=propuesta de responsable a empleado'
+    AFTER `user_id`,
+  ADD CONSTRAINT IF NOT EXISTS `fk_solicitudes_destinatario`
+    FOREIGN KEY (`destinatario_id`) REFERENCES `users` (`id`) ON DELETE SET NULL;

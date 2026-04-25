@@ -49,13 +49,30 @@ function calcularRetraso(string $horaEntrada, string $horaEsperada): int {
 }
 
 /**
- * Calcula las horas extra de un fichaje respecto a la hora de salida esperada.
- * Devuelve los minutos extra (puede ser negativo si salió antes).
+ * Calcula las horas extra de un fichaje.
+ * Compara el tiempo REAL trabajado (entrada→salida) con la jornada ESPERADA.
+ * Así un empleado que entra tarde y sale a su hora no genera extras falsos.
+ *
+ * @param string $horaEntrada         HH:MM:SS real de entrada
+ * @param string $horaSalida          HH:MM:SS real de salida
+ * @param string $horaEntradaEsperada HH:MM esperada de entrada según jornada
+ * @param string $horaSalidaEsperada  HH:MM esperada de salida según jornada
+ * @return int Minutos extra (negativo si no completó la jornada)
  */
-function calcularHorasExtra(string $horaSalida, string $horaEsperadaSalida): int {
-    $real     = strtotime(date('Y-m-d') . ' ' . $horaSalida);
-    $esperada = strtotime(date('Y-m-d') . ' ' . $horaEsperadaSalida);
-    return (int) round(($real - $esperada) / 60);
+function calcularHorasExtra(string $horaEntrada, string $horaSalida, string $horaEntradaEsperada, string $horaSalidaEsperada): int {
+    $hoy = date('Y-m-d');
+
+    // Minutos realmente trabajados
+    $tsEntrada  = strtotime($hoy . ' ' . $horaEntrada);
+    $tsSalida   = strtotime($hoy . ' ' . $horaSalida);
+    $minTrabajados = (int) round(($tsSalida - $tsEntrada) / 60);
+
+    // Minutos de jornada esperada
+    $tsEntradaEsp = strtotime($hoy . ' ' . $horaEntradaEsperada);
+    $tsSalidaEsp  = strtotime($hoy . ' ' . $horaSalidaEsperada);
+    $minJornada   = (int) round(($tsSalidaEsp - $tsEntradaEsp) / 60);
+
+    return $minTrabajados - $minJornada;
 }
 
 /**
@@ -163,7 +180,7 @@ function getFichajesRango(int $userId, string $desde, string $hasta): array {
 // ── Solicitudes ───────────────────────────────────────────────────────────────
 
 /**
- * Crea una nueva solicitud.
+ * Crea una nueva solicitud (empleado → responsable, flujo normal).
  */
 function crearSolicitud(int $userId, string $tipo, string $descripcion, string $fechaInicio = '', string $fechaFin = ''): bool {
     $pdo  = getDB();
@@ -172,6 +189,65 @@ function crearSolicitud(int $userId, string $tipo, string $descripcion, string $
          VALUES (?, ?, ?, 'pendiente', NOW(), ?, ?)"
     );
     return $stmt->execute([$userId, $tipo, $descripcion, $fechaInicio ?: null, $fechaFin ?: null]);
+}
+
+/**
+ * Crea una propuesta de un responsable hacia un empleado concreto.
+ * destinatario_id indica que el flujo es inverso: el empleado debe aceptar/rechazar.
+ */
+function crearPropuesta(int $remitenteId, int $destinatarioId, string $tipo, string $descripcion, string $fechaInicio = '', string $fechaFin = ''): bool {
+    $pdo  = getDB();
+    $stmt = $pdo->prepare(
+        "INSERT INTO solicitudes (user_id, destinatario_id, tipo, descripcion, estado, fecha, fecha_inicio, fecha_fin)
+         VALUES (?, ?, ?, ?, 'pendiente', NOW(), ?, ?)"
+    );
+    return $stmt->execute([$remitenteId, $destinatarioId, $tipo, $descripcion, $fechaInicio ?: null, $fechaFin ?: null]);
+}
+
+/**
+ * Devuelve el número de propuestas pendientes de respuesta para un usuario.
+ * Se usa para el badge de notificaciones en el sidebar.
+ */
+function contarPropuestasPendientes(int $userId): int {
+    $pdo  = getDB();
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) FROM solicitudes
+         WHERE destinatario_id = ? AND estado = 'pendiente'"
+    );
+    $stmt->execute([$userId]);
+    return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Devuelve las propuestas recibidas por un empleado (responsable → empleado).
+ */
+function getPropuestasRecibidas(int $userId): array {
+    $pdo  = getDB();
+    $stmt = $pdo->prepare(
+        "SELECT s.*, u.nombre AS remitente_nombre, u.rol AS remitente_rol
+         FROM solicitudes s
+         INNER JOIN users u ON u.id = s.user_id
+         WHERE s.destinatario_id = ?
+         ORDER BY s.fecha DESC"
+    );
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
+}
+
+/**
+ * Devuelve las propuestas enviadas por un responsable.
+ */
+function getPropuestasEnviadas(int $userId): array {
+    $pdo  = getDB();
+    $stmt = $pdo->prepare(
+        "SELECT s.*, u.nombre AS destinatario_nombre, u.email AS destinatario_email
+         FROM solicitudes s
+         INNER JOIN users u ON u.id = s.destinatario_id
+         WHERE s.user_id = ? AND s.destinatario_id IS NOT NULL
+         ORDER BY s.fecha DESC"
+    );
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
 }
 
 // ── Email con PHPMailer ───────────────────────────────────────────────────────
@@ -224,8 +300,8 @@ function notificarRetraso(int $userId, int $minutosRetraso): void {
     // Buscar subadmin y admin_rrhh del mismo departamento
     $stmt = $pdo->prepare(
         "SELECT email, nombre FROM users
-         WHERE (rol = 'subadmin' AND departamento_id = ?)
-            OR rol = 'admin_rrhh'
+         WHERE ((rol = 'subadmin' AND departamento_id = ?)
+             OR rol = 'admin_rrhh')
          AND activo = 1 AND archivado = 0"
     );
     $stmt->execute([$usuario['departamento_id']]);
