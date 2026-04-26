@@ -124,7 +124,7 @@ if ($metodo === 'POST') {
         }
 
         $horaAhora = date('H:i:s');
-        $horario   = obtenerHorario(getJornadaEfectiva($userId));
+        $horario   = obtenerHorario(getJornadaEfectiva($userId, $fichaje['fecha'] ?? date('Y-m-d')));
         $minExtra  = calcularHorasExtra($fichaje['hora_entrada'], $horaAhora, $horario['entrada'], $horario['salida']);
 
         $stmt = $pdo->prepare(

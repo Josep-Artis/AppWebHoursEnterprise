@@ -77,12 +77,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
             $estado      = $respuesta === 'aceptar' ? 'aprobado' : 'rechazado';
 
             // Verificar que la propuesta va dirigida a este usuario
-            $stmtV = $pdo->prepare("SELECT id FROM solicitudes WHERE id = ? AND destinatario_id = ? AND estado = 'pendiente'");
+            $stmtV = $pdo->prepare("SELECT * FROM solicitudes WHERE id = ? AND destinatario_id = ? AND estado = 'pendiente'");
             $stmtV->execute([$solicitudId, $userId]);
-            if ($stmtV->fetch()) {
+            $propuesta = $stmtV->fetch();
+            if ($propuesta) {
                 $pdo->prepare(
                     "UPDATE solicitudes SET estado = ?, aprobado_por = ?, fecha_resolucion = NOW() WHERE id = ?"
                 )->execute([$estado, $userId, $solicitudId]);
+
+                // Si acepta un cambio de horario → aplicar jornada nueva
+                if ($estado === 'aprobado' && $propuesta['tipo'] === 'cambio_horario' && !empty($propuesta['tipo_jornada_nueva'])) {
+                    if ($propuesta['fecha_inicio'] && $propuesta['fecha_fin']) {
+                        // Cambio TEMPORAL — el destinatario es el propio empleado
+                        $pdo->prepare(
+                            "INSERT INTO cambios_horario_temporales (user_id, tipo_jornada_temporal, fecha_inicio, fecha_fin, solicitud_id)
+                             VALUES (?, ?, ?, ?, ?)"
+                        )->execute([$userId, $propuesta['tipo_jornada_nueva'], $propuesta['fecha_inicio'], $propuesta['fecha_fin'], $solicitudId]);
+                    } else {
+                        // Cambio PERMANENTE
+                        $pdo->prepare("UPDATE users SET tipo_jornada = ? WHERE id = ?")
+                            ->execute([$propuesta['tipo_jornada_nueva'], $userId]);
+                    }
+                }
+
                 $mensaje = $estado === 'aprobado' ? 'Has aceptado la propuesta.' : 'Has rechazado la propuesta.';
             } else {
                 $error = 'Propuesta no válida o ya respondida.';
@@ -100,16 +117,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
             if ($stmt->execute([$estado, $userId, $solicitudId])) {
                 $mensaje = 'Solicitud ' . ($estado === 'aprobado' ? 'aprobada' : 'rechazada') . ' correctamente.';
 
-                // Si es vacaciones aprobada, crear entrada en tabla vacaciones
                 if ($estado === 'aprobado') {
                     $s = $pdo->prepare("SELECT * FROM solicitudes WHERE id = ?");
                     $s->execute([$solicitudId]);
                     $sol = $s->fetch();
+
+                    // Vacaciones aprobadas → crear entrada en tabla vacaciones
                     if ($sol && $sol['tipo'] === 'vacaciones' && $sol['fecha_inicio'] && $sol['fecha_fin']) {
                         $pdo->prepare(
                             "INSERT INTO vacaciones (user_id, fecha_inicio, fecha_fin, estado, aprobado_por)
                              VALUES (?, ?, ?, 'aprobado', ?)"
                         )->execute([$sol['user_id'], $sol['fecha_inicio'], $sol['fecha_fin'], $userId]);
+                    }
+
+                    // Cambio de horario aprobado → aplicar jornada nueva
+                    if ($sol && $sol['tipo'] === 'cambio_horario' && !empty($sol['tipo_jornada_nueva'])) {
+                        if ($sol['fecha_inicio'] && $sol['fecha_fin']) {
+                            // Cambio TEMPORAL
+                            $pdo->prepare(
+                                "INSERT INTO cambios_horario_temporales (user_id, tipo_jornada_temporal, fecha_inicio, fecha_fin, solicitud_id)
+                                 VALUES (?, ?, ?, ?, ?)"
+                            )->execute([$sol['user_id'], $sol['tipo_jornada_nueva'], $sol['fecha_inicio'], $sol['fecha_fin'], $solicitudId]);
+                        } else {
+                            // Cambio PERMANENTE
+                            $pdo->prepare("UPDATE users SET tipo_jornada = ? WHERE id = ?")
+                                ->execute([$sol['tipo_jornada_nueva'], $sol['user_id']]);
+                        }
                     }
                 }
             } else {
@@ -489,6 +522,18 @@ $etiquetasEstado = [
                                 </select>
                             </div>
 
+                            <div class="form-grupo" id="grupo-jornada-propuesta" style="display:none;">
+                                <label for="tipo_jornada_nueva_propuesta">Turno destino *</label>
+                                <select name="tipo_jornada_nueva" id="tipo_jornada_nueva_propuesta" class="form-control">
+                                    <option value="">— Selecciona turno —</option>
+                                    <option value="completa_manana">Jornada completa — Mañana (08:00-16:00)</option>
+                                    <option value="completa_tarde">Jornada completa — Tarde (11:00-19:00)</option>
+                                    <option value="parcial_manana">Jornada parcial — Mañana (08:00-13:00)</option>
+                                    <option value="parcial_tarde">Jornada parcial — Tarde (14:00-19:00)</option>
+                                </select>
+                                <span class="form-ayuda">Sin fechas = cambio permanente. Con fechas = cambio temporal.</span>
+                            </div>
+
                             <div class="form-grupo">
                                 <label for="descripcion_propuesta">Descripción *</label>
                                 <textarea name="descripcion_propuesta" id="descripcion_propuesta" class="form-control"
@@ -536,6 +581,18 @@ $etiquetasEstado = [
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
+                            </div>
+
+                            <div class="form-grupo" id="grupo-jornada-solicitud" style="display:none;">
+                                <label for="tipo_jornada_nueva_solicitud">Turno destino *</label>
+                                <select name="tipo_jornada_nueva" id="tipo_jornada_nueva_solicitud" class="form-control">
+                                    <option value="">— Selecciona turno —</option>
+                                    <option value="completa_manana">Jornada completa — Mañana (08:00-16:00)</option>
+                                    <option value="completa_tarde">Jornada completa — Tarde (11:00-19:00)</option>
+                                    <option value="parcial_manana">Jornada parcial — Mañana (08:00-13:00)</option>
+                                    <option value="parcial_tarde">Jornada parcial — Tarde (14:00-19:00)</option>
+                                </select>
+                                <span class="form-ayuda">Sin fechas = cambio permanente. Con fechas = cambio temporal.</span>
                             </div>
 
                             <div class="form-grupo">
@@ -587,6 +644,34 @@ $etiquetasEstado = [
         <?php elseif ($tipoFiltro): ?>
         document.querySelector('[data-tab="nueva"]')?.click();
         <?php endif; ?>
+
+        // Mostrar/ocultar turno destino en nueva solicitud
+        const tipoSol = document.getElementById('tipo');
+        const grupoJornadaSol = document.getElementById('grupo-jornada-solicitud');
+        const selectJornadaSol = document.getElementById('tipo_jornada_nueva_solicitud');
+        if (tipoSol && grupoJornadaSol) {
+            const toggleJornadaSol = () => {
+                const esCambio = tipoSol.value === 'cambio_horario';
+                grupoJornadaSol.style.display = esCambio ? 'block' : 'none';
+                selectJornadaSol.required = esCambio;
+            };
+            tipoSol.addEventListener('change', toggleJornadaSol);
+            toggleJornadaSol(); // por si hay valor preseleccionado
+        }
+
+        // Mostrar/ocultar turno destino en nueva propuesta
+        const tipoProp = document.getElementById('tipo_propuesta');
+        const grupoJornadaProp = document.getElementById('grupo-jornada-propuesta');
+        const selectJornadaProp = document.getElementById('tipo_jornada_nueva_propuesta');
+        if (tipoProp && grupoJornadaProp) {
+            const toggleJornadaProp = () => {
+                const esCambio = tipoProp.value === 'cambio_horario';
+                grupoJornadaProp.style.display = esCambio ? 'block' : 'none';
+                selectJornadaProp.required = esCambio;
+            };
+            tipoProp.addEventListener('change', toggleJornadaProp);
+            toggleJornadaProp();
+        }
     });
 </script>
 </body>

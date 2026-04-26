@@ -201,8 +201,14 @@ CREATE TABLE IF NOT EXISTS `eventos` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
--- FIN DEL ESQUEMA
+-- MIGRACIÓN v1.3 — Campo tipo_jornada_nueva en solicitudes
+-- Permite especificar el turno destino en solicitudes de cambio_horario
 -- ============================================================================
+ALTER TABLE `solicitudes`
+  ADD COLUMN IF NOT EXISTS `tipo_jornada_nueva`
+    ENUM('completa_manana','completa_tarde','parcial_manana','parcial_tarde') DEFAULT NULL
+    COMMENT 'Solo para tipo=cambio_horario — turno al que se quiere cambiar'
+    AFTER `tipo`;
 
 -- ============================================================================
 -- MIGRACIÓN v1.2 — Refactorización jornadas laborales
