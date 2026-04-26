@@ -63,7 +63,7 @@ $stmt->execute([$usuario['departamento_id']]);
 $eventos = $stmt->fetchAll();
 
 // ── Horario de hoy ────────────────────────────────────────────────────────────
-$horarioHoy  = obtenerHorario($usuario['tipo_jornada'] ?? 'completa');
+$horarioHoy  = obtenerHorario(getJornadaEfectiva($userId));
 $diaSemana   = (int)date('N');
 $esLaborable = ($diaSemana >= 1 && $diaSemana <= 5);
 ?>
@@ -171,9 +171,6 @@ $esLaborable = ($diaSemana >= 1 && $diaSemana <= 5);
                                 <div style="font-size:0.75rem;color:var(--texto-suave);text-transform:uppercase;">Salida</div>
                             </div>
                         </div>
-                        <?php if (esJornadaVerano()): ?>
-                            <div class="badge badge-verde">☀️ Jornada intensiva de verano</div>
-                        <?php endif; ?>
                         <div style="margin-top:1rem;"><a href="horario.php" class="btn btn-secundario btn-sm">Ver horario completo →</a></div>
                     </div>
 

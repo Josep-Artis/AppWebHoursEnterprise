@@ -50,9 +50,7 @@ if ($metodo === 'POST' && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH])) {
         $password   = $datos['password'] ?? '';
         $rol        = $datos['rol'] ?? ROL_USER;
         $deptoId    = (int)($datos['departamento_id'] ?? 0) ?: null;
-        $tipoJornada = $datos['tipo_jornada'] ?? 'completa';
-
-        if (!$nombre || !$email || !$password) {
+        $tipoJornada = $datos['tipo_jornada'] ?? 'sin_asignar';
             echo json_encode(['error' => 'Nombre, email y contraseña son obligatorios.']);
             exit;
         }
@@ -88,9 +86,7 @@ if ($metodo === 'POST' && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH])) {
         $email       = trim($datos['email'] ?? '');
         $rol         = $datos['rol'] ?? '';
         $deptoId     = (int)($datos['departamento_id'] ?? 0) ?: null;
-        $tipoJornada = $datos['tipo_jornada'] ?? 'completa';
-
-        if (!$id || !$nombre || !$email) {
+        $tipoJornada = $datos['tipo_jornada'] ?? 'sin_asignar';
             echo json_encode(['error' => 'Datos incompletos.']);
             exit;
         }
@@ -269,7 +265,13 @@ function mostrarListaEmpleados(PDO $pdo): void
                                 <td><span class="badge badge-primario"><?= $roles[$u['rol']] ?? e($u['rol']) ?></span></td>
                                 <td>
                                     <?php
-                                    $jornadas = ['completa'=>'Completa','media_manana'=>'Mañana','media_tarde'=>'Tarde'];
+                                    $jornadas = [
+                                        'completa_manana' => 'Completa Mañana',
+                                        'completa_tarde'  => 'Completa Tarde',
+                                        'parcial_manana'  => 'Parcial Mañana',
+                                        'parcial_tarde'   => 'Parcial Tarde',
+                                        'sin_asignar'     => '⚠ Sin asignar',
+                                    ];
                                     echo $jornadas[$u['tipo_jornada']] ?? e($u['tipo_jornada']);
                                     ?>
                                 </td>
@@ -360,9 +362,11 @@ function mostrarListaEmpleados(PDO $pdo): void
                 <div class="form-grupo">
                     <label>Tipo de jornada</label>
                     <select id="u-jornada" name="tipo_jornada" class="form-control">
-                        <option value="completa">Completa</option>
-                        <option value="media_manana">Media jornada mañana</option>
-                        <option value="media_tarde">Media jornada tarde</option>
+                        <option value="sin_asignar">— Sin asignar —</option>
+                        <option value="completa_manana">Jornada completa — Mañana (08:00-16:00)</option>
+                        <option value="completa_tarde">Jornada completa — Tarde (11:00-19:00)</option>
+                        <option value="parcial_manana">Jornada parcial — Mañana (08:00-13:00)</option>
+                        <option value="parcial_tarde">Jornada parcial — Tarde (14:00-19:00)</option>
                     </select>
                 </div>
             </div>

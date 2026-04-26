@@ -10,28 +10,56 @@ require_once __DIR__ . '/db.php';
 // ── Horarios ─────────────────────────────────────────────────────────────────
 
 /**
- * Determina el horario de entrada/salida según tipo de jornada y fecha.
+ * Devuelve el horario de entrada/salida según tipo de jornada.
+ * No hay lógica de verano — se eliminó en v1.2.
  *
- * @param string $tipoJornada completa|media_manana|media_tarde
- * @param string $fecha       YYYY-MM-DD (por defecto hoy)
+ * @param string $tipoJornada completa_manana|completa_tarde|parcial_manana|parcial_tarde
  * @return array ['entrada' => 'HH:MM', 'salida' => 'HH:MM']
  */
-function obtenerHorario(string $tipoJornada, string $fecha = ''): array {
-    if (!$fecha) $fecha = date('Y-m-d');
-    $mes = (int) date('m', strtotime($fecha));
-    $esVerano = ($mes >= 6 && $mes < 9); // junio, julio, agosto
-
+function obtenerHorario(string $tipoJornada): array {
     switch ($tipoJornada) {
-        case 'media_manana':
-            return ['entrada' => HORA_ENTRADA_MANANA, 'salida' => HORA_SALIDA_MANANA];
-        case 'media_tarde':
-            return ['entrada' => HORA_ENTRADA_TARDE, 'salida' => HORA_SALIDA_TARDE];
-        default: // completa
-            if ($esVerano) {
-                return ['entrada' => HORA_ENTRADA_VERANO, 'salida' => HORA_SALIDA_VERANO];
-            }
-            return ['entrada' => HORA_ENTRADA_NORMAL, 'salida' => HORA_SALIDA_NORMAL];
+        case 'completa_manana':
+            return ['entrada' => HORA_ENTRADA_COMPLETA_MANANA, 'salida' => HORA_SALIDA_COMPLETA_MANANA];
+        case 'completa_tarde':
+            return ['entrada' => HORA_ENTRADA_COMPLETA_TARDE,  'salida' => HORA_SALIDA_COMPLETA_TARDE];
+        case 'parcial_manana':
+            return ['entrada' => HORA_ENTRADA_PARCIAL_MANANA,  'salida' => HORA_SALIDA_PARCIAL_MANANA];
+        case 'parcial_tarde':
+            return ['entrada' => HORA_ENTRADA_PARCIAL_TARDE,   'salida' => HORA_SALIDA_PARCIAL_TARDE];
+        default:
+            // sin_asignar u otro valor desconocido
+            return ['entrada' => '00:00', 'salida' => '00:00'];
     }
+}
+
+/**
+ * Devuelve el tipo de jornada efectiva para un usuario en una fecha dada.
+ * Primero comprueba si hay un cambio temporal activo en cambios_horario_temporales.
+ * Si no hay ninguno, devuelve el tipo_jornada base del usuario.
+ *
+ * @param int    $userId ID del usuario
+ * @param string $fecha  YYYY-MM-DD (por defecto hoy)
+ * @return string completa_manana|completa_tarde|parcial_manana|parcial_tarde|sin_asignar
+ */
+function getJornadaEfectiva(int $userId, string $fecha = ''): string {
+    if (!$fecha) $fecha = date('Y-m-d');
+    $pdo = getDB();
+
+    // Buscar cambio temporal activo para esta fecha
+    $stmt = $pdo->prepare(
+        "SELECT tipo_jornada_temporal FROM cambios_horario_temporales
+         WHERE user_id = ? AND fecha_inicio <= ? AND fecha_fin >= ?
+         ORDER BY created_at DESC LIMIT 1"
+    );
+    $stmt->execute([$userId, $fecha, $fecha]);
+    $cambio = $stmt->fetchColumn();
+
+    if ($cambio) return $cambio;
+
+    // Sin cambio temporal → devolver jornada base del usuario
+    $stmt2 = $pdo->prepare("SELECT tipo_jornada FROM users WHERE id = ? LIMIT 1");
+    $stmt2->execute([$userId]);
+    return $stmt2->fetchColumn() ?: 'sin_asignar';
 }
 
 /**
@@ -380,13 +408,4 @@ function fechaEspanol(string $fecha): string {
 function getDepartamentos(): array {
     $pdo = getDB();
     return $pdo->query("SELECT * FROM departamentos ORDER BY nombre")->fetchAll();
-}
-
-/**
- * Indica si hoy es jornada de verano.
- */
-function esJornadaVerano(string $fecha = ''): bool {
-    if (!$fecha) $fecha = date('Y-m-d');
-    $mes = (int) date('m', strtotime($fecha));
-    return ($mes >= 6 && $mes < 9);
 }

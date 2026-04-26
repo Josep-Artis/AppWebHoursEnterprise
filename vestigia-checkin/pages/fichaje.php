@@ -12,7 +12,9 @@ requireLogin();
 
 $userId    = userId();
 $usuario   = getUsuario($userId);
-$horario   = obtenerHorario($usuario['tipo_jornada'] ?? 'completa');
+$jornadaEfectiva = getJornadaEfectiva($userId);
+$sinJornada = ($jornadaEfectiva === 'sin_asignar');
+$horario   = obtenerHorario($jornadaEfectiva);
 $proyectos = getProyectosUsuario($userId);
 $fichajeAbierto = getFichajeAbierto($userId);
 
@@ -68,10 +70,24 @@ $fichajesRecientes = $stmt->fetchAll();
                     <?php endif; ?>
                 </div>
                 <div style="margin-top:0.5rem;font-size:0.82rem;opacity:0.65;">
-                    Horario: <?= $horario['entrada'] ?> – <?= $horario['salida'] ?>
-                    <?= esJornadaVerano() ? '(Jornada intensiva)' : '' ?>
+                    <?php if ($sinJornada): ?>
+                        Sin jornada asignada
+                    <?php else: ?>
+                        Horario: <?= $horario['entrada'] ?> – <?= $horario['salida'] ?>
+                    <?php endif; ?>
                 </div>
             </div>
+
+            <?php if ($sinJornada): ?>
+            <div class="alerta alerta-error" style="margin-bottom:1.5rem;">
+                <span>⚠</span>
+                <div>
+                    <strong>Jornada no asignada.</strong>
+                    Tu horario laboral aún no ha sido configurado.
+                    Contacta con RRHH o tu responsable para que te asignen un turno.
+                </div>
+            </div>
+            <?php endif; ?>
 
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.5rem;">
                 <!-- Panel de entrada -->
@@ -105,7 +121,7 @@ $fichajesRecientes = $stmt->fetchAll();
                     <button
                         id="btn-entrada"
                         class="btn btn-exito btn-bloque btn-lg"
-                        <?= $fichajeAbierto ? 'disabled' : '' ?>
+                        <?= ($fichajeAbierto || $sinJornada) ? 'disabled' : '' ?>
                     >
                         🕐 Registrar entrada
                     </button>

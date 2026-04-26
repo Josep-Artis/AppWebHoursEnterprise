@@ -74,9 +74,16 @@ if ($metodo === 'POST') {
             exit;
         }
 
+        // Validar jornada asignada
+        $jornadaEfectiva = getJornadaEfectiva($userId);
+        if ($jornadaEfectiva === 'sin_asignar') {
+            echo json_encode(['error' => 'Tu jornada laboral no está asignada. Contacta con RRHH.']);
+            exit;
+        }
+
         // Calcular retraso
         $horaAhora   = date('H:i:s');
-        $horario     = obtenerHorario($usuario['tipo_jornada'] ?? 'completa');
+        $horario     = obtenerHorario($jornadaEfectiva);
         $minRetraso  = calcularRetraso($horaAhora, $horario['entrada']);
         $esTarde     = ($minRetraso > 0);
 
@@ -117,7 +124,7 @@ if ($metodo === 'POST') {
         }
 
         $horaAhora = date('H:i:s');
-        $horario   = obtenerHorario($usuario['tipo_jornada'] ?? 'completa');
+        $horario   = obtenerHorario(getJornadaEfectiva($userId));
         $minExtra  = calcularHorasExtra($fichaje['hora_entrada'], $horaAhora, $horario['entrada'], $horario['salida']);
 
         $stmt = $pdo->prepare(

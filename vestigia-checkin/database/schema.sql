@@ -205,7 +205,29 @@ CREATE TABLE IF NOT EXISTS `eventos` (
 -- ============================================================================
 
 -- ============================================================================
--- MIGRACIÓN v1.1 — Propuestas de responsable a empleado
+-- MIGRACIÓN v1.2 — Refactorización jornadas laborales
+-- Ejecutar sobre bases de datos existentes
+-- ============================================================================
+
+-- 1. Actualizar ENUM tipo_jornada en users
+ALTER TABLE `users` MODIFY `tipo_jornada`
+  ENUM('completa_manana','completa_tarde','parcial_manana','parcial_tarde','sin_asignar')
+  NOT NULL DEFAULT 'sin_asignar';
+
+-- 2. Nueva tabla para cambios temporales de horario
+CREATE TABLE IF NOT EXISTS `cambios_horario_temporales` (
+  `id`                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id`               INT UNSIGNED NOT NULL,
+  `tipo_jornada_temporal` ENUM('completa_manana','completa_tarde','parcial_manana','parcial_tarde') NOT NULL,
+  `fecha_inicio`          DATE NOT NULL,
+  `fecha_fin`             DATE NOT NULL,
+  `solicitud_id`          INT UNSIGNED DEFAULT NULL COMMENT 'Solicitud o propuesta que originó el cambio',
+  `created_at`            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `user_fecha` (`user_id`, `fecha_inicio`, `fecha_fin`),
+  CONSTRAINT `fk_cht_user`      FOREIGN KEY (`user_id`)      REFERENCES `users`(`id`)      ON DELETE CASCADE,
+  CONSTRAINT `fk_cht_solicitud` FOREIGN KEY (`solicitud_id`) REFERENCES `solicitudes`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 -- Ejecutar sobre bases de datos existentes (instalaciones nuevas ya lo tienen)
 -- ============================================================================
 

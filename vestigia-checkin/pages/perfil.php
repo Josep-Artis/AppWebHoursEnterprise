@@ -150,8 +150,14 @@ $stats = $stmt->fetch();
                         <p><strong>Departamento:</strong> <?= e($usuario['departamento_nombre'] ?? '—') ?></p>
                         <p><strong>Tipo de jornada:</strong>
                             <?php
-                            $tipos = ['completa'=>'Completa','media_manana'=>'Media jornada mañana','media_tarde'=>'Media jornada tarde'];
-                            echo $tipos[$usuario['tipo_jornada']] ?? 'Completa';
+                            $tipos = [
+                                'completa_manana' => 'Completa — Mañana (08:00-16:00)',
+                                'completa_tarde'  => 'Completa — Tarde (11:00-19:00)',
+                                'parcial_manana'  => 'Parcial — Mañana (08:00-13:00)',
+                                'parcial_tarde'   => 'Parcial — Tarde (14:00-19:00)',
+                                'sin_asignar'     => '⚠ Sin asignar',
+                            ];
+                            echo $tipos[$usuario['tipo_jornada']] ?? e($usuario['tipo_jornada']);
                             ?>
                         </p>
                         <?php if ($stats['primer_fichaje']): ?>

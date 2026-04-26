@@ -19,8 +19,9 @@ $mesActual = (int)date('m');
 $anioActual = (int)date('Y');
 $trimestre = ceil($mesActual / 3);
 
-// Horario base según tipo de jornada
-$horarioBase = obtenerHorario($usuario['tipo_jornada'] ?? 'completa');
+// Horario base según tipo de jornada efectiva
+$jornadaEfectiva = getJornadaEfectiva($userId);
+$horarioBase = obtenerHorario($jornadaEfectiva);
 
 // Horarios personalizados por día si existen
 $stmt = $pdo->prepare(
@@ -91,9 +92,6 @@ $nombresMes = ['','enero','febrero','marzo','abril','mayo','junio','julio','agos
             <div class="card" style="margin-bottom:1.25rem;">
                 <div class="card-titulo">
                     🕐 Horario semanal — T<?= $trimestre ?> <?= $anioActual ?>
-                    <?php if (esJornadaVerano()): ?>
-                        <span class="badge badge-verde">☀️ Jornada intensiva de verano</span>
-                    <?php endif; ?>
                 </div>
                 <div class="horario-semana">
                     <?php for ($dia = 1; $dia <= 5; $dia++): ?>
@@ -121,8 +119,14 @@ $nombresMes = ['','enero','febrero','marzo','abril','mayo','junio','julio','agos
                 <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--borde);display:flex;gap:1rem;flex-wrap:wrap;font-size:0.85rem;">
                     <span><strong>Tipo de jornada:</strong>
                         <?php
-                        $tipos = ['completa'=>'Completa','media_manana'=>'Media jornada (mañana)','media_tarde'=>'Media jornada (tarde)'];
-                        echo $tipos[$usuario['tipo_jornada']] ?? 'Completa';
+                        $tipos = [
+                            'completa_manana' => 'Completa — Mañana (08:00-16:00)',
+                            'completa_tarde'  => 'Completa — Tarde (11:00-19:00)',
+                            'parcial_manana'  => 'Parcial — Mañana (08:00-13:00)',
+                            'parcial_tarde'   => 'Parcial — Tarde (14:00-19:00)',
+                            'sin_asignar'     => '⚠ Sin asignar',
+                        ];
+                        echo $tipos[$jornadaEfectiva] ?? e($jornadaEfectiva);
                         ?>
                     </span>
                     <span><strong>Departamento:</strong> <?= e($usuario['departamento_nombre'] ?? '—') ?></span>

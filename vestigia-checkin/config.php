@@ -32,17 +32,15 @@ define('MAIL_FROM',     'noreply@vestigia.com');
 define('MAIL_FROM_NAME','Vestigia CheckIn');
 
 // ── Horarios laborales ───────────────────────────────────────────────────────
-define('HORA_ENTRADA_NORMAL',    '08:00'); // Hora de entrada estándar
-define('HORA_SALIDA_NORMAL',     '19:00'); // Hora de salida estándar
-define('HORA_ENTRADA_VERANO',    '08:00'); // Hora de entrada jornada intensiva
-define('HORA_SALIDA_VERANO',     '16:00'); // Hora de salida jornada intensiva
-define('HORA_ENTRADA_MANANA',    '08:00'); // Media jornada mañana entrada
-define('HORA_SALIDA_MANANA',     '13:00'); // Media jornada mañana salida
-define('HORA_ENTRADA_TARDE',     '13:00'); // Media jornada tarde entrada
-define('HORA_SALIDA_TARDE',      '19:00'); // Media jornada tarde salida
-define('INICIO_JORNADA_VERANO',  '06-01'); // 1 de junio
-define('FIN_JORNADA_VERANO',     '09-01'); // 1 de septiembre
-define('HORAS_SEMANALES_MAX',    40);      // Máximo de horas semanales antes de extras
+define('HORA_ENTRADA_COMPLETA_MANANA', '08:00'); // Jornada completa turno mañana
+define('HORA_SALIDA_COMPLETA_MANANA',  '16:00');
+define('HORA_ENTRADA_COMPLETA_TARDE',  '11:00'); // Jornada completa turno tarde
+define('HORA_SALIDA_COMPLETA_TARDE',   '19:00');
+define('HORA_ENTRADA_PARCIAL_MANANA',  '08:00'); // Jornada parcial turno mañana
+define('HORA_SALIDA_PARCIAL_MANANA',   '13:00');
+define('HORA_ENTRADA_PARCIAL_TARDE',   '14:00'); // Jornada parcial turno tarde
+define('HORA_SALIDA_PARCIAL_TARDE',    '19:00');
+define('HORAS_SEMANALES_MAX',          40);      // Máximo de horas semanales antes de extras
 
 // ── Rutas de archivos ────────────────────────────────────────────────────────
 define('ROOT_PATH',   __DIR__);

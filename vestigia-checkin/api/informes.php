@@ -46,8 +46,9 @@ if ($accion === 'editar_fichaje') {
         $teletrabajo = (int)isset($_POST['teletrabajo']);
 
         // Recalcular tarde y minutos retraso
-        $usuarioFich = getUsuario($fichaje['user_id']);
-        $horario     = obtenerHorario($usuarioFich['tipo_jornada'] ?? 'completa');
+        $usuarioFich     = getUsuario($fichaje['user_id']);
+        $jornadaEfectiva = getJornadaEfectiva($fichaje['user_id'], $fichaje['fecha'] ?? date('Y-m-d'));
+        $horario         = obtenerHorario($jornadaEfectiva);
         $minRetraso  = calcularRetraso($horaEntrada . ':00', $horario['entrada']);
         $esTarde     = ($minRetraso > 0) ? 1 : 0;
 
