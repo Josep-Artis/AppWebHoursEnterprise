@@ -51,6 +51,8 @@ if ($metodo === 'POST' && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH])) {
         $rol        = $datos['rol'] ?? ROL_USER;
         $deptoId    = (int)($datos['departamento_id'] ?? 0) ?: null;
         $tipoJornada = $datos['tipo_jornada'] ?? 'sin_asignar';
+
+        if (!$nombre || !$email || !$password) {
             echo json_encode(['error' => 'Nombre, email y contraseña son obligatorios.']);
             exit;
         }
@@ -87,6 +89,8 @@ if ($metodo === 'POST' && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH])) {
         $rol         = $datos['rol'] ?? '';
         $deptoId     = (int)($datos['departamento_id'] ?? 0) ?: null;
         $tipoJornada = $datos['tipo_jornada'] ?? 'sin_asignar';
+
+        if (!$id || !$nombre || !$email) {
             echo json_encode(['error' => 'Datos incompletos.']);
             exit;
         }

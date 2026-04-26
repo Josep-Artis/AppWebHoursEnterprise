@@ -23,9 +23,9 @@
     if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
         $pdo_ = getDB();
         if (tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH])) {
-            $notifCount = (int)$pdo_->query("SELECT COUNT(*) FROM solicitudes WHERE estado='pendiente'")->fetchColumn();
+            $notifCount = (int)$pdo_->query("SELECT COUNT(*) FROM solicitudes WHERE estado='pendiente' AND destinatario_id IS NULL")->fetchColumn();
         } else {
-            $st_ = $pdo_->prepare("SELECT COUNT(*) FROM solicitudes s INNER JOIN users u ON u.id=s.user_id WHERE s.estado='pendiente' AND u.departamento_id=?");
+            $st_ = $pdo_->prepare("SELECT COUNT(*) FROM solicitudes s INNER JOIN users u ON u.id=s.user_id WHERE s.estado='pendiente' AND s.destinatario_id IS NULL AND u.departamento_id=?");
             $st_->execute([userDepto()]);
             $notifCount = (int)$st_->fetchColumn();
         }
