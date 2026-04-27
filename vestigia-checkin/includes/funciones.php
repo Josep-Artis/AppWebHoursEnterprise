@@ -210,26 +210,26 @@ function getFichajesRango(int $userId, string $desde, string $hasta): array {
 /**
  * Crea una nueva solicitud (empleado → responsable, flujo normal).
  */
-function crearSolicitud(int $userId, string $tipo, string $descripcion, string $fechaInicio = '', string $fechaFin = ''): bool {
+function crearSolicitud(int $userId, string $tipo, string $descripcion, string $fechaInicio = '', string $fechaFin = '', string $tipoJornadaNueva = ''): bool {
     $pdo  = getDB();
     $stmt = $pdo->prepare(
-        "INSERT INTO solicitudes (user_id, tipo, descripcion, estado, fecha, fecha_inicio, fecha_fin)
-         VALUES (?, ?, ?, 'pendiente', NOW(), ?, ?)"
+        "INSERT INTO solicitudes (user_id, tipo, tipo_jornada_nueva, descripcion, estado, fecha, fecha_inicio, fecha_fin)
+         VALUES (?, ?, ?, ?, 'pendiente', NOW(), ?, ?)"
     );
-    return $stmt->execute([$userId, $tipo, $descripcion, $fechaInicio ?: null, $fechaFin ?: null]);
+    return $stmt->execute([$userId, $tipo, $tipoJornadaNueva ?: null, $descripcion, $fechaInicio ?: null, $fechaFin ?: null]);
 }
 
 /**
  * Crea una propuesta de un responsable hacia un empleado concreto.
  * destinatario_id indica que el flujo es inverso: el empleado debe aceptar/rechazar.
  */
-function crearPropuesta(int $remitenteId, int $destinatarioId, string $tipo, string $descripcion, string $fechaInicio = '', string $fechaFin = ''): bool {
+function crearPropuesta(int $remitenteId, int $destinatarioId, string $tipo, string $descripcion, string $fechaInicio = '', string $fechaFin = '', string $tipoJornadaNueva = ''): bool {
     $pdo  = getDB();
     $stmt = $pdo->prepare(
-        "INSERT INTO solicitudes (user_id, destinatario_id, tipo, descripcion, estado, fecha, fecha_inicio, fecha_fin)
-         VALUES (?, ?, ?, ?, 'pendiente', NOW(), ?, ?)"
+        "INSERT INTO solicitudes (user_id, destinatario_id, tipo, tipo_jornada_nueva, descripcion, estado, fecha, fecha_inicio, fecha_fin)
+         VALUES (?, ?, ?, ?, ?, 'pendiente', NOW(), ?, ?)"
     );
-    return $stmt->execute([$remitenteId, $destinatarioId, $tipo, $descripcion, $fechaInicio ?: null, $fechaFin ?: null]);
+    return $stmt->execute([$remitenteId, $destinatarioId, $tipo, $tipoJornadaNueva ?: null, $descripcion, $fechaInicio ?: null, $fechaFin ?: null]);
 }
 
 /**

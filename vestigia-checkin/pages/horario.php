@@ -23,6 +23,31 @@ $trimestre = ceil($mesActual / 3);
 $jornadaEfectiva = getJornadaEfectiva($userId);
 $horarioBase = obtenerHorario($jornadaEfectiva);
 
+// Cambios temporales de horario activos o futuros
+$stmt = $pdo->prepare(
+    "SELECT cht.*, s.descripcion AS solicitud_desc
+     FROM cambios_horario_temporales cht
+     LEFT JOIN solicitudes s ON s.id = cht.solicitud_id
+     WHERE cht.user_id = ? AND cht.fecha_fin >= CURDATE()
+     ORDER BY cht.fecha_inicio ASC"
+);
+$stmt->execute([$userId]);
+$cambiosTemporales = $stmt->fetchAll();
+
+// Horario efectivo por día de la semana actual (lunes a viernes)
+$horariosPorDiaSemana = [];
+for ($dia = 1; $dia <= 5; $dia++) {
+    $fechaDia = date('Y-m-d', strtotime("this week monday +".($dia-1)." days"));
+    $jornadaDia = getJornadaEfectiva($userId, $fechaDia);
+    $horarioDia = obtenerHorario($jornadaDia);
+    $horariosPorDiaSemana[$dia] = [
+        'entrada'  => $horarioDia['entrada'],
+        'salida'   => $horarioDia['salida'],
+        'jornada'  => $jornadaDia,
+        'temporal' => ($jornadaDia !== $jornadaEfectiva || array_filter($cambiosTemporales, fn($c) => $c['fecha_inicio'] <= $fechaDia && $c['fecha_fin'] >= $fechaDia)),
+    ];
+}
+
 // Horarios personalizados por día si existen
 $stmt = $pdo->prepare(
     "SELECT * FROM horarios
@@ -96,14 +121,11 @@ $nombresMes = ['','enero','febrero','marzo','abril','mayo','junio','julio','agos
                 <div class="horario-semana">
                     <?php for ($dia = 1; $dia <= 5; $dia++): ?>
                     <?php
-                        if (isset($horariosPorDia[$dia])) {
-                            $entrada = $horariosPorDia[$dia]['hora_inicio'];
-                            $salida  = $horariosPorDia[$dia]['hora_fin'];
-                        } else {
-                            $entrada = $horarioBase['entrada'];
-                            $salida  = $horarioBase['salida'];
-                        }
-                        $esHoy = ((int)date('N') === $dia);
+                        $datoDia  = $horariosPorDiaSemana[$dia];
+                        $entrada  = $datoDia['entrada'];
+                        $salida   = $datoDia['salida'];
+                        $temporal = $datoDia['temporal'];
+                        $esHoy    = ((int)date('N') === $dia);
                     ?>
                     <div class="horario-dia-card" style="<?= $esHoy ? 'border-color:var(--primario);background:rgba(24,67,50,0.04);' : '' ?>">
                         <div class="horario-dia-nombre"><?= $diasSemanaCompleto[$dia-1] ?></div>
@@ -112,12 +134,15 @@ $nombresMes = ['','enero','febrero','marzo','abril','mayo','junio','julio','agos
                         <?php if ($esHoy): ?>
                             <div class="badge badge-primario" style="margin-top:0.5rem;font-size:0.65rem;">HOY</div>
                         <?php endif; ?>
+                        <?php if ($temporal): ?>
+                            <div class="badge badge-acento" style="margin-top:0.3rem;font-size:0.6rem;">TEMPORAL</div>
+                        <?php endif; ?>
                     </div>
                     <?php endfor; ?>
                 </div>
 
                 <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--borde);display:flex;gap:1rem;flex-wrap:wrap;font-size:0.85rem;">
-                    <span><strong>Tipo de jornada:</strong>
+                    <span><strong>Tipo de jornada base:</strong>
                         <?php
                         $tipos = [
                             'completa_manana' => 'Completa — Mañana (08:00-16:00)',
@@ -126,11 +151,39 @@ $nombresMes = ['','enero','febrero','marzo','abril','mayo','junio','julio','agos
                             'parcial_tarde'   => 'Parcial — Tarde (14:00-19:00)',
                             'sin_asignar'     => '⚠ Sin asignar',
                         ];
-                        echo $tipos[$jornadaEfectiva] ?? e($jornadaEfectiva);
+                        echo $tipos[$usuario['tipo_jornada']] ?? e($usuario['tipo_jornada']);
                         ?>
                     </span>
                     <span><strong>Departamento:</strong> <?= e($usuario['departamento_nombre'] ?? '—') ?></span>
                 </div>
+
+                <?php if ($cambiosTemporales): ?>
+                <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--borde);">
+                    <div style="font-size:0.85rem;font-weight:600;margin-bottom:0.5rem;">🔄 Cambios de horario temporales activos o próximos</div>
+                    <div class="tabla-contenedor">
+                        <table class="tabla" style="font-size:0.82rem;">
+                            <thead>
+                                <tr>
+                                    <th>Turno temporal</th>
+                                    <th>Desde</th>
+                                    <th>Hasta</th>
+                                    <th>Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($cambiosTemporales as $ct): ?>
+                                <tr>
+                                    <td><?= $tipos[$ct['tipo_jornada_temporal']] ?? e($ct['tipo_jornada_temporal']) ?></td>
+                                    <td><?= date('d/m/Y', strtotime($ct['fecha_inicio'])) ?></td>
+                                    <td><?= date('d/m/Y', strtotime($ct['fecha_fin'])) ?></td>
+                                    <td style="max-width:200px;"><?= $ct['solicitud_desc'] ? e($ct['solicitud_desc']) : '—' ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
 
             <!-- Calendario del mes -->

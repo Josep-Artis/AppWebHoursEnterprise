@@ -27,18 +27,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
 
         // ── Nueva solicitud (empleado → responsable) ──────────────────────────
         if ($accion === 'nueva_solicitud') {
-            $tipo        = $_POST['tipo'] ?? '';
-            $descripcion = trim($_POST['descripcion'] ?? '');
-            $fechaInicio = $_POST['fecha_inicio'] ?? '';
-            $fechaFin    = $_POST['fecha_fin'] ?? '';
+            $tipo             = $_POST['tipo'] ?? '';
+            $descripcion      = trim($_POST['descripcion'] ?? '');
+            $fechaInicio      = $_POST['fecha_inicio'] ?? '';
+            $fechaFin         = $_POST['fecha_fin'] ?? '';
+            $tipoJornadaNueva = $_POST['tipo_jornada_nueva'] ?? '';
 
             $tiposValidos = ['vacaciones','baja','cambio_horario','teletrabajo'];
             if (!in_array($tipo, $tiposValidos)) {
                 $error = 'Tipo de solicitud inválido.';
             } elseif (!$descripcion) {
                 $error = 'La descripción es obligatoria.';
+            } elseif ($tipo === 'cambio_horario' && !$tipoJornadaNueva) {
+                $error = 'Debes seleccionar el turno destino para un cambio de horario.';
             } else {
-                if (crearSolicitud($userId, $tipo, $descripcion, $fechaInicio, $fechaFin)) {
+                if (crearSolicitud($userId, $tipo, $descripcion, $fechaInicio, $fechaFin, $tipoJornadaNueva)) {
                     $mensaje = 'Solicitud enviada correctamente. Recibirás una respuesta pronto.';
                 } else {
                     $error = 'Error al enviar la solicitud. Inténtalo de nuevo.';
@@ -48,11 +51,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
 
         // ── Nueva propuesta (responsable → empleado) ──────────────────────────
         elseif ($accion === 'nueva_propuesta' && tieneRol([ROL_SUPERADMIN, ROL_ADMIN_RRHH, ROL_SUBADMIN])) {
-            $destinatarioId = (int)($_POST['destinatario_id'] ?? 0);
-            $tipo           = $_POST['tipo'] ?? '';
-            $descripcion    = trim($_POST['descripcion_propuesta'] ?? '');
-            $fechaInicio    = $_POST['fecha_inicio_propuesta'] ?? '';
-            $fechaFin       = $_POST['fecha_fin_propuesta'] ?? '';
+            $destinatarioId   = (int)($_POST['destinatario_id'] ?? 0);
+            $tipo             = $_POST['tipo'] ?? '';
+            $descripcion      = trim($_POST['descripcion_propuesta'] ?? '');
+            $fechaInicio      = $_POST['fecha_inicio_propuesta'] ?? '';
+            $fechaFin         = $_POST['fecha_fin_propuesta'] ?? '';
+            $tipoJornadaNueva = $_POST['tipo_jornada_nueva'] ?? '';
 
             $tiposValidos = ['vacaciones','baja','cambio_horario','teletrabajo'];
             if (!$destinatarioId) {
@@ -61,8 +65,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion'])) {
                 $error = 'Tipo de propuesta inválido.';
             } elseif (!$descripcion) {
                 $error = 'La descripción es obligatoria.';
+            } elseif ($tipo === 'cambio_horario' && !$tipoJornadaNueva) {
+                $error = 'Debes seleccionar el turno destino para un cambio de horario.';
             } else {
-                if (crearPropuesta($userId, $destinatarioId, $tipo, $descripcion, $fechaInicio, $fechaFin)) {
+                if (crearPropuesta($userId, $destinatarioId, $tipo, $descripcion, $fechaInicio, $fechaFin, $tipoJornadaNueva)) {
                     $mensaje = 'Propuesta enviada correctamente al empleado.';
                 } else {
                     $error = 'Error al enviar la propuesta. Inténtalo de nuevo.';
